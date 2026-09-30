@@ -1,0 +1,27 @@
+{
+  "name": "react-native-cad",
+  "version": "0.1.0",
+  "description": "Native iPad CAD canvas for Expo and React Native",
+  "license": "UNLICENSED",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "react-native": "src/index.ts",
+  "workspaces": ["example"],
+  "files": ["build", "src", "ios", "scripts/clean-build.cjs", "tsconfig.json", "DrawCanvasKit/Sources", "DrawCanvasKit/Tests", "DrawCanvasKit/Package.swift", "DrawCanvasKit/README.md", "*.podspec", "expo-module.config.json"],
+  "repository": {"type": "git", "url": "git+ssh://git@github.com/apollohg/react-native-cad.git"},
+  "scripts": {
+    "build": "node scripts/clean-build.cjs && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {"expo": ">=57 <58", "react": ">=19.2 <20", "react-native": ">=0.86 <0.87"},
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "expo": "~57.0.26",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-test-renderer": "19.2.3",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

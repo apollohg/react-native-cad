@@ -1,0 +1,15 @@
+{
+  "name": "react-native-cad-example",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": { "start": "expo start --dev-client", "ios": "expo run:ios --device", "prebuild": "expo prebuild --platform ios" },
+  "dependencies": {
+    "expo": "~57.0.26",
+    "expo-build-properties": "~57.0.22",
+    "expo-dev-client": "~57.0.19",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-cad": "file:.."
+  }
+}

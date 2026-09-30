@@ -1,0 +1,14 @@
+node_modules/
+build/
+*.tgz
+.DS_Store
+**/.build/
+**/.swiftpm/
+**/xcuserdata/
+example/ios/
+example/android/
+example/.expo/
+example/dist/
+Config/Local.xcconfig
+DrawCanvasDemo/Config/Local.xcconfig
+.verification/

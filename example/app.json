@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "CAD Example",
+    "slug": "react-native-cad-example",
+    "version": "1.0.0",
+    "orientation": "default",
+    "ios": { "bundleIdentifier": "com.apollohg.reactnativecad.example", "supportsTablet": true, "isTabletOnly": true },
+    "plugins": [["expo-build-properties", { "ios": { "deploymentTarget": "26.0", "enableSceneSupport": true } }]]
+  }
+}

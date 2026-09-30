@@ -1,0 +1,8 @@
+{
+  "platforms": ["ios"],
+  "apple": {
+    "modules": ["ReactNativeCADModule"],
+    "podspecPath": ["DrawCanvasCore.podspec", "DrawCanvasUI.podspec", "ReactNativeCAD.podspec"],
+    "swiftModuleName": ["ReactNativeCAD"]
+  }
+}
