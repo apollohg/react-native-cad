@@ -1,6 +1,10 @@
 import CadCanvasCore
 import Foundation
 
+public enum CanvasInputMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case pencil, touch, both
+}
+
 public enum CanvasFeature: String, Codable, CaseIterable, Hashable, Sendable {
     case measurements, dimensionEditing, calibration, grid, snapping, shapeRecognition
     case panning, zooming, selectionMovement, selectionResizing
@@ -128,6 +132,7 @@ public struct CanvasMeasurementsConfiguration: Codable, Hashable, Sendable {
 }
 
 public struct CanvasConfiguration: Codable, Hashable, Sendable {
+    public var inputMode: CanvasInputMode = .pencil
     public var enabledTools: Set<CanvasTool> = Set(CanvasTool.allCases)
     public var enabledFeatures: Set<CanvasFeature> = Set(CanvasFeature.allCases)
     public var controls = CanvasControlsConfiguration()

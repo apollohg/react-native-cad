@@ -4,6 +4,18 @@ import CadCanvasCore
 
 @MainActor
 final class CanvasJSONOptionsTests: XCTestCase {
+    func testInputModeDefaultsRoundTripsAndRejectsUnknownValues() throws {
+        for mode in ["pencil", "touch", "both"] {
+            let options = try CanvasJSONOptions.decode("{\"configuration\":{\"inputMode\":\"\(mode)\"}}")
+            let data = try JSONEncoder().encode(options.configuration)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(object["inputMode"] as? String, mode, "Input mode must survive the native options bridge")
+        }
+        let defaults = try JSONSerialization.jsonObject(with: JSONEncoder().encode(CanvasConfiguration())) as? [String: Any]
+        XCTAssertEqual(defaults?["inputMode"] as? String, "pencil")
+        XCTAssertThrowsError(try CanvasJSONOptions.decode(#"{"configuration":{"inputMode":"mouse"}}"#))
+    }
+
     func testPartialOptionsPreserveDefaultsAndReplaceArrays() throws {
         let options = try CanvasJSONOptions.decode(#"{"configuration":{"enabledTools":["freehand"],"measurements":{"unit":"inches"}},"theme":{"background":{"red":0.2,"green":0.3,"blue":0.4,"alpha":1}}}"#)
         XCTAssertEqual(options.configuration.enabledTools, [.freehand])

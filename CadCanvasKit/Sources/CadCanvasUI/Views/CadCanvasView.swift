@@ -119,6 +119,10 @@ public final class CadCanvasCoordinator {
     private var pencilShortcutCoordinator: CanvasPencilShortcutCoordinator?
     private var pencilShortcutHandler: CanvasPencilShortcutHandler?
     private var isPencilTransactionActive = false
+    private var editingSource: UITouch.TouchType?
+    private var editingStart: CGPoint?
+    private var isManipulatingTouch = false
+    private static let manipulationThreshold: CGFloat = 3
     private weak var commandActions: CanvasCommandActions?
     private weak var hostView: CanvasHostView?
     private var lastCompletePresentation: CanvasPreparedPresentation?
@@ -190,6 +194,8 @@ public final class CadCanvasCoordinator {
             renderView = renderer.makeRenderView()
         }
         let host = CanvasHostView(renderView: renderView)
+        host.inputMode = session.configuration.inputMode
+        host.prepareInput = { [weak self] in self?.synchronizeExternalState() }
         textCoordinator.install(on: host)
         host.sendPencil = { [weak self] phase, confirmed, predicted in
             self?.sendPencil(phase, confirmed: confirmed, predicted: predicted)
@@ -211,9 +217,19 @@ public final class CadCanvasCoordinator {
                 self?.canManipulate(at: point) ?? false
             },
             send: { [weak self] input in
+                switch input {
+                case .panBegan, .pinchBegan:
+                    self?.hostView?.cancelEditingTouch()
+                default: break
+                }
                 self?.receive(input)
             }
         )
+        gestures.configure(inputMode: session.configuration.inputMode)
+        gestures.canNavigate = { [weak host] in host?.activeInputSource != .pencil }
+        gestures.canPan = { [weak session] in session?.configuration.allows(.panning) == true }
+        gestures.canZoom = { [weak session] in session?.configuration.allows(.zooming) == true }
+        host.willBeginEditing = { [weak gestures] in gestures?.cancelNavigation() }
         gestures.install(on: host)
         let delegateProxy = CanvasGestureDelegateProxy(
             gestureCoordinator: gestures,
@@ -332,6 +348,8 @@ public final class CadCanvasCoordinator {
             gestureCoordinator.uninstall()
             hostView.sendPencil = nil
             hostView.sendPencilCancelled = nil
+            hostView.prepareInput = nil
+            hostView.willBeginEditing = nil
             hostView.didLayout = nil
         }
         commandActions?.detach(from: self)
@@ -374,6 +392,7 @@ public final class CadCanvasCoordinator {
     }
 
     func cancelActiveInteraction() {
+        resetEditingInput()
         guard !isDismantled else { return }
         cancelRecognitionTasks()
         performanceSignposts.cancelAll()
@@ -390,7 +409,7 @@ public final class CadCanvasCoordinator {
         guard !isDismantled else { return }
         synchronizeExternalState()
         let previousTarget = eraserTargetID
-        guard session.activeTool == .eraser else {
+        guard session.activeTool == .eraser, session.configuration.inputMode.allows(.pencil) else {
             if previousTarget != nil {
                 apply(reducer.reduce(.pencilHover(nil), in: context()))
                 update()
@@ -420,7 +439,7 @@ public final class CadCanvasCoordinator {
 
     func dispatchPencilShortcut(_ context: CanvasPencilShortcutContext) {
         synchronizeExternalState()
-        guard session.configuration.allows(.pencilShortcuts) else { return }
+        guard session.configuration.allows(.pencilShortcuts), session.configuration.inputMode.allows(.pencil) else { return }
         if context.action == .showColorPalette {
             let control: CanvasControl = session.mostRecentStyleTool == .text ? .textColor : .strokeColor
             guard session.configuration.shows(control) else { return }
@@ -460,7 +479,9 @@ public final class CadCanvasCoordinator {
 
 private extension CadCanvasCoordinator {
     func context() -> CanvasInteractionContext {
-        CanvasInteractionContext(
+        var inkConfiguration = session.inkConfiguration
+        if editingSource == .direct { inkConfiguration.pressureEnabled = false }
+        return CanvasInteractionContext(
             documentID: session.document.id,
             viewport: session.viewport,
             elements: session.document.elements,
@@ -470,7 +491,7 @@ private extension CadCanvasCoordinator {
             documentRevision: session.document.revision,
             snapConfiguration: session.effectiveSnapConfiguration,
             strokeStyle: session.strokeStyle,
-            inkConfiguration: session.inkConfiguration,
+            inkConfiguration: inkConfiguration,
             recognitionEnabled: recognizer != nil && session.configuration.allows(.shapeRecognition),
             configuration: session.configuration
         )
@@ -598,14 +619,17 @@ private extension CadCanvasCoordinator {
         if observedConfiguration != session.configuration {
             let capabilitiesChanged = observedConfiguration.enabledTools != session.configuration.enabledTools
                 || observedConfiguration.enabledFeatures != session.configuration.enabledFeatures
+                || observedConfiguration.inputMode != session.configuration.inputMode
             observedConfiguration = session.configuration
             pencilPalettePresenter.dismiss()
             if capabilitiesChanged {
                 cancelRecognitionTasks()
                 performanceSignposts.cancelAll()
                 pencilShortcutCoordinator?.cancelPendingAction()
-                isPencilTransactionActive = false
+                resetEditingInput()
+                hostView?.inputMode = session.configuration.inputMode
                 apply(reducer.reduce(.cancel, in: context()), allowRecognition: false)
+                gestureCoordinator?.configure(inputMode: session.configuration.inputMode)
                 textCoordinator.cancelEditingSessions()
                 transientPreview = nil
                 snapGuides = []
@@ -623,10 +647,12 @@ private extension CadCanvasCoordinator {
             cancelRecognitionTasks()
             pencilShortcutCoordinator?.cancelPendingAction()
             pencilPalettePresenter.dismiss()
+            resetEditingInput()
             apply(reducer.reduce(.cancel, in: context()), allowRecognition: false)
         }
         if reducer.activeTool != session.activeTool {
             cancelRecognitionTasks()
+            resetEditingInput()
             apply(reducer.reduce(.toolChanged(session.activeTool), in: context()), allowRecognition: false)
         }
     }
@@ -699,10 +725,26 @@ private extension CadCanvasCoordinator {
         confirmed: [CanvasPencilTouchSample],
         predicted: [CanvasPencilTouchSample]
     ) {
+        synchronizeExternalState()
+        guard let primary = confirmed.last,
+              session.configuration.inputMode.allows(primary.source) else { return }
         let viewport = session.viewport
         guard viewport.zoom.isFinite, viewport.zoom > 0 else { return }
         if phase == .began {
-            isPencilTransactionActive = true
+            editingSource = primary.source
+            isPencilTransactionActive = primary.source == .pencil
+            editingStart = primary.location
+            isManipulatingTouch = false
+        }
+        defer {
+            if phase == .ended {
+                resetEditingInput()
+                pencilShortcutCoordinator?.pencilTransactionDidFinish()
+            }
+        }
+        if session.activeTool == .select || session.activeTool == .text {
+            sendEditingTouch(phase, location: primary.location)
+            return
         }
         func canvasSamples(_ samples: [CanvasPencilTouchSample]) -> [CanvasInkSample] {
             samples.compactMap { sample -> CanvasInkSample? in
@@ -720,28 +762,44 @@ private extension CadCanvasCoordinator {
             }
         }
         let confirmedSamples = canvasSamples(confirmed)
-        guard !confirmedSamples.isEmpty else {
-            if phase == .ended {
-                isPencilTransactionActive = false
-                pencilShortcutCoordinator?.pencilTransactionDidFinish()
-            }
-            return
-        }
+        guard !confirmedSamples.isEmpty else { return }
         receive(.pencilSamples(
             phase: phase,
             confirmed: confirmedSamples,
             predicted: canvasSamples(predicted)
         ))
-        if phase == .ended {
-            isPencilTransactionActive = false
-            pencilShortcutCoordinator?.pencilTransactionDidFinish()
-        }
     }
 
     func sendPencilCancelled() {
-        isPencilTransactionActive = false
+        resetEditingInput()
         receive(.pencilCancelled)
         pencilShortcutCoordinator?.cancelPendingAction()
+    }
+
+    func resetEditingInput() {
+        hostView?.resetEditingTouch()
+        isPencilTransactionActive = false
+        editingSource = nil
+        editingStart = nil
+        isManipulatingTouch = false
+    }
+
+    func sendEditingTouch(_ phase: CanvasPencilBatchPhase, location: CGPoint) {
+        guard let start = editingStart else { return }
+        let delta = CanvasPoint(x: Double(location.x - start.x), y: Double(location.y - start.y))
+        let moved = hypot(location.x - start.x, location.y - start.y) >= Self.manipulationThreshold
+        if session.activeTool == .select, phase != .began, moved || isManipulatingTouch {
+            if !isManipulatingTouch {
+                let point = session.viewport.canvasPoint(fromScreen: .init(x: Double(start.x), y: Double(start.y)))
+                guard canManipulate(at: point) else { return }
+                receive(.manipulationBegan(point: point))
+                isManipulatingTouch = true
+            }
+            receive(.manipulationChanged(cumulativeScreenDelta: delta))
+            if phase == .ended { receive(.manipulationEnded) }
+        } else if phase == .ended, !moved {
+            receive(.tap(session.viewport.canvasPoint(fromScreen: .init(x: Double(location.x), y: Double(location.y)))))
+        }
     }
 
     func canManipulate(at point: CanvasPoint) -> Bool {
@@ -797,7 +855,8 @@ private final class CanvasGestureDelegateProxy: NSObject, UIGestureRecognizerDel
         _ gestureRecognizer: UIGestureRecognizer,
         shouldReceive touch: UITouch
     ) -> Bool {
-        !(textCoordinator?.containsOverlayView(touch.view) ?? false)
+        gestureCoordinator?.isNavigation(gestureRecognizer) == true
+            || !(textCoordinator?.containsOverlayView(touch.view) ?? false)
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -821,17 +880,20 @@ struct CanvasPencilTouchSample {
     let location: CGPoint
     let force: CGFloat
     let maximumPossibleForce: CGFloat
+    let source: UITouch.TouchType
 
     init(
         identity: AnyObject,
         location: CGPoint,
         force: CGFloat = 0,
-        maximumPossibleForce: CGFloat = 0
+        maximumPossibleForce: CGFloat = 0,
+        source: UITouch.TouchType = .pencil
     ) {
         self.identity = identity
         self.location = location
         self.force = force
         self.maximumPossibleForce = maximumPossibleForce
+        self.source = source
     }
 
     var normalizedPressure: Double {
@@ -848,6 +910,12 @@ struct CanvasPencilTouchSample {
 @MainActor
 final class CanvasHostView: UIView {
     let renderView: UIView
+    var inputMode: CanvasInputMode = .pencil
+    var prepareInput: (() -> Void)?
+    var willBeginEditing: (() -> Void)?
+    private var activeTouch: CanvasPencilTouchSample?
+    private var directTouches: Set<ObjectIdentifier> = []
+    var activeInputSource: UITouch.TouchType? { activeTouch?.source }
     var sendPencil: ((
         CanvasPencilBatchPhase,
         [CanvasPencilTouchSample],
@@ -887,7 +955,19 @@ final class CanvasHostView: UIView {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard touches.contains(where: { $0.type == .pencil }) else { return }
+        for touch in touches {
+            directTouches.remove(ObjectIdentifier(touch))
+            if activeTouch?.hasSameIdentity(as: sample(from: touch)) == true {
+                cancelEditingTouch()
+            }
+        }
+    }
+
+    func resetEditingTouch() { activeTouch = nil }
+
+    func cancelEditingTouch() {
+        guard activeTouch != nil else { return }
+        resetEditingTouch()
         sendPencilCancelled?()
     }
 
@@ -896,8 +976,32 @@ final class CanvasHostView: UIView {
         with event: UIEvent?,
         phase: CanvasPencilBatchPhase
     ) {
-        for touch in touches where touch.type == .pencil {
+        prepareInput?()
+        if phase == .began {
+            for touch in touches where touch.type == .direct {
+                directTouches.insert(ObjectIdentifier(touch))
+            }
+        }
+        let directCount = event?.allTouches?.filter {
+            $0.type == .direct && $0.phase != .ended && $0.phase != .cancelled
+        }.count ?? directTouches.count
+        if directCount > 1, activeInputSource == .direct { cancelEditingTouch() }
+        defer {
+            if phase == .ended {
+                for touch in touches { directTouches.remove(ObjectIdentifier(touch)) }
+            }
+        }
+        // Admit Pencil first if UIKit delivers both sources together.
+        for touch in touches.sorted(by: { $0.type == .pencil && $1.type != .pencil }) {
             let primary = sample(from: touch)
+            guard inputMode.allows(touch.type), touch.type == .pencil || touch.type == .direct else { continue }
+            if phase == .began {
+                if touch.type == .direct, directCount != 1 || activeTouch != nil { continue }
+                if touch.type == .pencil { cancelEditingTouch() }
+                willBeginEditing?()
+                activeTouch = primary
+            }
+            guard activeTouch?.hasSameIdentity(as: primary) == true else { continue }
             let coalesced = event?.coalescedTouches(for: touch)?.map(sample(from:)) ?? []
             let predicted = event?.predictedTouches(for: touch)?.map(sample(from:)) ?? []
             deliverPencilSamples(
@@ -906,6 +1010,7 @@ final class CanvasHostView: UIView {
                 predicted: predicted,
                 phase: phase
             )
+            if phase == .ended { resetEditingTouch() }
         }
     }
 
@@ -914,7 +1019,8 @@ final class CanvasHostView: UIView {
             identity: touch,
             location: touch.location(in: self),
             force: touch.force,
-            maximumPossibleForce: touch.maximumPossibleForce
+            maximumPossibleForce: touch.maximumPossibleForce,
+            source: touch.type
         )
     }
 

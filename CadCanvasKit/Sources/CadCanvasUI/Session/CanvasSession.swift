@@ -97,6 +97,7 @@ public final class CanvasSession {
         guard configuration != self.configuration else { return }
         let capabilitiesChanged = configuration.enabledTools != self.configuration.enabledTools
             || configuration.enabledFeatures != self.configuration.enabledFeatures
+            || configuration.inputMode != self.configuration.inputMode
         self.configuration = configuration
         if capabilitiesChanged {
             preview = nil

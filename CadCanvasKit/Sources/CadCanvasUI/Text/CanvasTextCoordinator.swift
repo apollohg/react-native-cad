@@ -2,6 +2,20 @@ import UIKit
 import CadCanvasCore
 
 @MainActor
+private final class CanvasTextInputView: UITextView {
+    var inputMode: () -> CanvasInputMode = { .pencil }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let touches = event?.allTouches, !touches.isEmpty {
+            let starting = touches.filter { $0.phase == .began }
+            let candidates = starting.isEmpty ? touches : starting
+            guard candidates.contains(where: { inputMode().allows($0.type) }) else { return nil }
+        }
+        return super.hitTest(point, with: event)
+    }
+}
+
+@MainActor
 final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIndirectScribbleInteractionDelegate {
     typealias ElementIdentifier = String
 
@@ -131,6 +145,7 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
     }
 
     func cancelEditingSessions() {
+        for id in Array(dragStates.keys) { cancelDrag(id: id) }
         let states = editStates
         for (id, state) in states {
             do {
@@ -289,7 +304,7 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
         requestElementsIn rect: CGRect,
         completion: @escaping ([String]) -> Void
     ) {
-        guard session.activeTool == .text && session.configuration.allows(.text), finite(rect) else {
+        guard allowsScribble, finite(rect) else {
             completion([])
             return
         }
@@ -315,7 +330,7 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
         _ interaction: any UIInteraction,
         isElementFocused elementIdentifier: String
     ) -> Bool {
-        guard session.activeTool == .text && session.configuration.allows(.text),
+        guard allowsScribble,
               let id = elementID(for: elementIdentifier) else { return false }
         return focusedElementID == id || overlays[id]?.isFirstResponder == true
     }
@@ -324,7 +339,7 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
         _ interaction: any UIInteraction,
         frameForElement elementIdentifier: String
     ) -> CGRect {
-        guard session.activeTool == .text && session.configuration.allows(.text),
+        guard allowsScribble,
               let id = elementID(for: elementIdentifier),
               let element = element(id: id),
               let frame = scribbleFrame(for: element) else {
@@ -339,7 +354,7 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
         referencePoint focusReferencePoint: CGPoint,
         completion: @escaping ((any UIResponder & UITextInput)?) -> Void
     ) {
-        guard session.activeTool == .text && session.configuration.allows(.text),
+        guard allowsScribble,
               let id = elementID(for: elementIdentifier), element(id: id) != nil else {
             completion(nil)
             return
@@ -353,8 +368,9 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
         _ interaction: any UIInteraction,
         willBeginWritingInElement elementIdentifier: String
     ) {
-        guard session.activeTool == .text && session.configuration.allows(.text),
+        guard allowsScribble,
               let id = elementID(for: elementIdentifier) else { return }
+        cancelDrag(id: id)
         focusElement(id)
     }
 
@@ -362,7 +378,7 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
         _ interaction: any UIInteraction,
         didFinishWritingInElement elementIdentifier: String
     ) {
-        guard session.activeTool == .text && session.configuration.allows(.text),
+        guard allowsScribble,
               let id = elementID(for: elementIdentifier),
               activeEditingIDs.contains(id),
               let view = overlays[id],
@@ -380,6 +396,11 @@ final class CanvasTextCoordinator: NSObject, UITextViewDelegate, @MainActor UIIn
 }
 
 extension CanvasTextCoordinator {
+    private var allowsScribble: Bool {
+        session.activeTool == .text && session.configuration.allows(.text)
+            && session.configuration.inputMode.allows(.pencil)
+    }
+
     var defaultTextWidth: Double { 240 }
 
     var validViewport: Bool {
@@ -393,7 +414,8 @@ extension CanvasTextCoordinator {
     }
 
     func makeOverlay(for id: UUID) -> UITextView {
-        let view = UITextView(frame: .zero)
+        let view = CanvasTextInputView(frame: .zero)
+        view.inputMode = { [weak session] in session?.configuration.inputMode ?? .pencil }
         view.delegate = self
         view.backgroundColor = .clear
         view.isOpaque = false
@@ -419,6 +441,11 @@ extension CanvasTextCoordinator {
             view.text = text.text
         }
         view.isUserInteractionEnabled = session.activeTool == .text && session.configuration.allows(.text)
+        let sources: [UITouch.TouchType] = [.direct, .pencil, .indirectPointer]
+        for recognizer in view.gestureRecognizers ?? [] {
+            recognizer.allowedTouchTypes = sources.filter { session.configuration.inputMode.allows($0) }
+                .map { NSNumber(value: $0.rawValue) }
+        }
         guard let frame = screenFrame(
             for: element,
             minimumEditingTarget: isEditing || text.text.isEmpty

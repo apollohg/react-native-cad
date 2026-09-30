@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E20000000000000000000001 /* InteractionReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000002; };
+		E20000000000000000000003 /* FreehandPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000004; };
 		D50000000000000000000005 /* CadCanvasUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000006 /* CadCanvasUITests.swift */; };
 		D50000000000000000000003 /* MetalSceneCompilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000004 /* MetalSceneCompilerTests.swift */; };
 		D50000000000000000000001 /* RendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000002 /* RendererTests.swift */; };
@@ -47,6 +49,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E20000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = InteractionReducerTests.swift; path = ../CadCanvasKit/Tests/CadCanvasUITests/InteractionReducerTests.swift; sourceTree = SOURCE_ROOT; };
+		E20000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FreehandPipelineTests.swift; path = ../CadCanvasKit/Tests/CadCanvasUITests/FreehandPipelineTests.swift; sourceTree = SOURCE_ROOT; };
 		D50000000000000000000006 /* CadCanvasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CadCanvasUITests.swift; path = ../CadCanvasKit/Tests/CadCanvasUITests/CadCanvasUITests.swift; sourceTree = SOURCE_ROOT; };
 		D50000000000000000000004 /* MetalSceneCompilerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetalSceneCompilerTests.swift; path = ../CadCanvasKit/Tests/CadCanvasUITests/MetalSceneCompilerTests.swift; sourceTree = SOURCE_ROOT; };
 		D50000000000000000000002 /* RendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RendererTests.swift; path = ../CadCanvasKit/Tests/CadCanvasUITests/RendererTests.swift; sourceTree = SOURCE_ROOT; };
@@ -156,6 +160,8 @@
 				D50000000000000000000006 /* CadCanvasUITests.swift */,
 				D30000000000000000000002 /* CanvasConfigurationTests.swift */,
 				E10000000000000000000002,
+				E20000000000000000000002,
+				E20000000000000000000004,
 			);
 			name = "Physical Gate Tests";
 			sourceTree = "<group>";
@@ -297,6 +303,8 @@
 				D50000000000000000000005 /* CadCanvasUITests.swift in Sources */,
 				D30000000000000000000001 /* CanvasConfigurationTests.swift in Sources */,
 				E10000000000000000000001,
+				E20000000000000000000001,
+				E20000000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

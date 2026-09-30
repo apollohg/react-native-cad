@@ -2,6 +2,7 @@ import type { Ref } from 'react';
 import type { ViewProps } from 'react-native';
 
 export type CADTool = 'select' | 'line' | 'rectangle' | 'arch' | 'freehand' | 'text' | 'eraser';
+export type CADInputMode = 'pencil' | 'touch' | 'both';
 export type CADFeature = 'measurements' | 'dimensionEditing' | 'calibration' | 'grid' | 'snapping'
   | 'shapeRecognition' | 'panning' | 'zooming' | 'selectionMovement' | 'selectionResizing'
   | 'deletion' | 'duplication' | 'clearing' | 'history' | 'strokeStyling' | 'textStyling'
@@ -12,6 +13,8 @@ export type CADControl = 'strokeColor' | 'lineWidth' | 'fill' | 'pressure' | 'wi
 export interface CADColor { red: number; green: number; blue: number; alpha: number }
 export interface CADControlRange { bounds: [number, number]; step: number }
 export interface CADConfiguration {
+  /** Drawing/editing input. Defaults to pencil; finger navigation remains available. */
+  inputMode?: CADInputMode;
   enabledTools?: CADTool[];
   enabledFeatures?: CADFeature[];
   showsSnapGuides?: boolean;

@@ -2,11 +2,223 @@ import CadCanvasCore
 import Metal
 import SwiftUI
 import XCTest
+import UIKit
 
 @testable import CadCanvasUI
 
 @MainActor
+private final class CanvasTestTouch: UITouch {
+    let source: UITouch.TouchType
+    var point: CGPoint
+    init(source: UITouch.TouchType, point: CGPoint) {
+        self.source = source
+        self.point = point
+        super.init()
+    }
+    override var type: UITouch.TouchType { source }
+    override func location(in view: UIView?) -> CGPoint { point }
+}
+
+@MainActor
+private final class CanvasTestTouchEvent: UIEvent {
+    let samples: Set<UITouch>
+    init(_ samples: Set<UITouch>) {
+        self.samples = samples
+        super.init()
+    }
+    override var allTouches: Set<UITouch>? { samples }
+}
+
+@MainActor
 final class CanvasConfigurationTests: XCTestCase {
+    func testTouchOnlyModeRejectsScribbleAndPencilTextEditing() throws {
+        let session = CanvasSession()
+        var configuration = session.configuration
+        configuration.inputMode = .touch
+        try session.setConfiguration(configuration)
+        session.selectTool(.text)
+        let text = CanvasTextCoordinator(session: session)
+        let host = UIView(frame: .init(x: 0, y: 0, width: 500, height: 500))
+        text.install(on: host)
+        defer { text.dismantle() }
+        let scribble = try XCTUnwrap(text.scribbleInteraction)
+        var identifiers: [String] = []
+        text.indirectScribbleInteraction(scribble, requestElementsIn: .init(x: 20, y: 20, width: 100, height: 40)) {
+            identifiers = $0
+        }
+        XCTAssertTrue(identifiers.isEmpty, "Scribble must not create text in touch-only mode")
+        XCTAssertNil(session.preview)
+        text.handleTextToolTap(atCanvasPoint: .init(x: 20, y: 20))
+        let overlay = try XCTUnwrap(host.subviews.compactMap { $0 as? UITextView }.first)
+        let pencil = CanvasTestTouch(source: .pencil, point: .init(x: 25, y: 25))
+        XCTAssertNil(overlay.hitTest(.init(x: 5, y: 5), with: CanvasTestTouchEvent([pencil])))
+        let finger = CanvasTestTouch(source: .direct, point: .init(x: 25, y: 25))
+        XCTAssertNotNil(overlay.hitTest(.init(x: 5, y: 5), with: CanvasTestTouchEvent([finger])))
+    }
+
+    func testNavigationUsesTwoFingersOnlyWhenFingerEditingIsEnabled() {
+        let gestures = CanvasGestureCoordinator(
+            viewport: { try! .identity(size: .init(width: 300, height: 300)) },
+            canManipulate: { _ in true }, send: { _ in })
+        for mode in CanvasInputMode.allCases {
+            gestures.configure(inputMode: mode)
+            XCTAssertEqual(gestures.panRecognizer.minimumNumberOfTouches, mode == .pencil ? 1 : 2)
+            XCTAssertTrue(gestures.shouldBegin(role: .pan, screenLocation: .init(x: 20, y: 20)),
+                          "Navigation must work over a selected object")
+            XCTAssertEqual(gestures.panRecognizer.allowedTouchTypes, [NSNumber(value: UITouch.TouchType.direct.rawValue)])
+            XCTAssertEqual(gestures.allowsSimultaneousRecognition(.pan, .pinch), mode != .pencil,
+                           "Two-finger pan must not prevent a pinch that starts during the same gesture")
+        }
+        gestures.canNavigate = { false }
+        XCTAssertFalse(gestures.shouldBegin(role: .pan, screenLocation: .init(x: 20, y: 20)))
+        XCTAssertFalse(gestures.shouldBegin(role: .pinch, screenLocation: .init(x: 20, y: 20)))
+    }
+
+    func testPinchTakesOverTwoFingerPanWithoutLosingScaleOrReplayingPanDelta() throws {
+        let session = CanvasSession()
+        let coordinator = CadCanvasCoordinator(session: session, recognizer: nil, renderer: CoreGraphicsCanvasRenderer())
+        defer { coordinator.dismantle() }
+        let gestures = CanvasGestureCoordinator(viewport: { session.viewport }, send: { coordinator.receive($0) })
+        gestures.configure(inputMode: .touch)
+        gestures.deliver(.panBegan(.init(x: 100, y: 100)))
+        gestures.deliver(.panChanged(cumulativeScreenDelta: .init(x: 20, y: 10)))
+        XCTAssertEqual(session.viewport.translation, .init(x: 20, y: 10))
+        let centroid = CanvasPoint(x: 120, y: 110)
+        gestures.deliver(.pinchBegan(canvasAnchor: session.viewport.canvasPoint(fromScreen: centroid), screenCentroid: centroid))
+        gestures.deliver(.pinchChanged(scaleFromStart: 2, currentScreenCentroid: centroid))
+        XCTAssertEqual(session.viewport.zoom, 2)
+        let pinched = session.viewport
+        gestures.deliver(.panChanged(cumulativeScreenDelta: .init(x: 60, y: 40)))
+        gestures.deliver(.pinchEnded)
+        gestures.deliver(.panChanged(cumulativeScreenDelta: .init(x: 90, y: 80)))
+        gestures.deliver(.panEnded(screenVelocity: .init(x: 0, y: 0)))
+        XCTAssertEqual(session.viewport, pinched, "Remaining pan callbacks must not replay pre-pinch translation")
+        gestures.deliver(.panBegan(.init(x: 0, y: 0)))
+        gestures.deliver(.panChanged(cumulativeScreenDelta: .init(x: 5, y: 5)))
+        gestures.deliver(.panEnded(screenVelocity: .init(x: 0, y: 0)))
+        XCTAssertEqual(session.viewport.translation.x, pinched.translation.x + 5)
+    }
+
+    func testInputModesFilterDrawingAtTheUIKitBoundary() throws {
+        for mode in CanvasInputMode.allCases {
+            for source in [UITouch.TouchType.pencil, .direct] {
+                let session = CanvasSession()
+                var configuration = session.configuration
+                configuration.inputMode = mode
+                try session.setConfiguration(configuration)
+                session.selectTool(.freehand)
+                let coordinator = CadCanvasCoordinator(session: session, recognizer: nil, renderer: CoreGraphicsCanvasRenderer())
+                let host = coordinator.makeHostView()
+                defer { coordinator.dismantle() }
+                let touch = CanvasTestTouch(source: source, point: .init(x: 10, y: 10))
+                host.touchesBegan([touch], with: nil)
+                touch.point = .init(x: 50, y: 30)
+                host.touchesMoved([touch], with: nil)
+                host.touchesEnded([touch], with: nil)
+                let allowed = mode == .both || (mode == .pencil ? source == .pencil : source == .direct)
+                XCTAssertEqual(session.document.elements.count, allowed ? 1 : 0, "\(mode), \(source): only the configured source may commit")
+                if allowed, case .freehand(let ink) = session.document.elements.first?.geometry {
+                    XCTAssertEqual(ink.pressureEnabled, source == .pencil, "Touch uses nominal width; Pencil retains pressure")
+                }
+            }
+        }
+    }
+
+    func testPencilPreemptsFingerDraftWithoutCommittingIt() throws {
+        let session = CanvasSession()
+        var configuration = session.configuration
+        configuration.inputMode = .both
+        try session.setConfiguration(configuration)
+        session.selectTool(.freehand)
+        let coordinator = CadCanvasCoordinator(session: session, recognizer: nil, renderer: CoreGraphicsCanvasRenderer())
+        let host = coordinator.makeHostView()
+        defer { coordinator.dismantle() }
+        let finger = CanvasTestTouch(source: .direct, point: .init(x: 10, y: 10))
+        let pencil = CanvasTestTouch(source: .pencil, point: .init(x: 200, y: 200))
+        host.touchesBegan([finger], with: nil)
+        finger.point = .init(x: 50, y: 50)
+        host.touchesMoved([finger], with: nil)
+        XCTAssertNotNil(session.preview)
+        host.touchesBegan([pencil], with: nil)
+        host.touchesEnded([finger], with: nil)
+        pencil.point = .init(x: 250, y: 250)
+        host.touchesMoved([pencil], with: nil)
+        host.touchesEnded([pencil], with: nil)
+        XCTAssertEqual(session.document.elements.count, 1)
+        let element = try XCTUnwrap(session.document.elements.first)
+        XCTAssertGreaterThan(element.bounds.minX, 100, "The cancelled finger draft must not leak into Pencil geometry")
+    }
+
+    func testSecondFingerCancelsDraftAndDoesNotResumeWhenOneFingerLifts() throws {
+        let session = CanvasSession()
+        var configuration = session.configuration
+        configuration.inputMode = .touch
+        try session.setConfiguration(configuration)
+        session.selectTool(.freehand)
+        let coordinator = CadCanvasCoordinator(session: session, recognizer: nil, renderer: CoreGraphicsCanvasRenderer())
+        let host = coordinator.makeHostView()
+        defer { coordinator.dismantle() }
+        let first = CanvasTestTouch(source: .direct, point: .init(x: 10, y: 10))
+        let second = CanvasTestTouch(source: .direct, point: .init(x: 100, y: 100))
+        host.touchesBegan([first], with: nil)
+        first.point = .init(x: 30, y: 30)
+        host.touchesMoved([first], with: nil)
+        XCTAssertNotNil(session.preview)
+        host.touchesBegan([second], with: nil)
+        XCTAssertNil(session.preview)
+        host.touchesEnded([second], with: nil)
+        first.point = .init(x: 50, y: 50)
+        host.touchesMoved([first], with: nil)
+        host.touchesEnded([first], with: nil)
+        XCTAssertTrue(session.document.elements.isEmpty, "Navigation must not leave an accidental stroke")
+    }
+
+    func testPencilTapSelectsAndDraggingEditsWhileFingerIsNavigationOnly() throws {
+        let element = CanvasElement.rectangle(id: UUID(), rect: .init(x: 20, y: 20, width: 100, height: 80))
+        let session = try CanvasSession(document: .init(elements: [element]))
+        let coordinator = CadCanvasCoordinator(session: session, recognizer: nil, renderer: CoreGraphicsCanvasRenderer())
+        let host = coordinator.makeHostView()
+        defer { coordinator.dismantle() }
+        let pencil = CanvasTestTouch(source: .pencil, point: .init(x: 70, y: 20))
+        host.touchesBegan([pencil], with: nil)
+        host.touchesEnded([pencil], with: nil)
+        XCTAssertEqual(session.selectedElementID, element.id)
+        pencil.point = .init(x: 70, y: 60)
+        host.touchesBegan([pencil], with: nil)
+        pencil.point = .init(x: 100, y: 90)
+        host.touchesMoved([pencil], with: nil)
+        host.touchesEnded([pencil], with: nil)
+        XCTAssertNotEqual(session.document.elements.first?.bounds, element.bounds)
+        let committed = session.document
+        let finger = CanvasTestTouch(source: .direct, point: .init(x: 100, y: 90))
+        host.touchesBegan([finger], with: nil)
+        finger.point = .init(x: 150, y: 150)
+        host.touchesMoved([finger], with: nil)
+        host.touchesEnded([finger], with: nil)
+        XCTAssertEqual(session.document.elements, committed.elements)
+        XCTAssertEqual(session.document.revision, committed.revision)
+    }
+
+    func testChangingInputModeDiscardsDraftAndKeepsCommittedDocument() throws {
+        let element = CanvasElement.rectangle(id: UUID(), rect: .init(x: 20, y: 20, width: 100, height: 80))
+        let session = try CanvasSession(document: CanvasDocument(elements: [element]))
+        session.selectTool(.freehand)
+        let coordinator = CadCanvasCoordinator(session: session, recognizer: nil, renderer: CoreGraphicsCanvasRenderer())
+        let host = coordinator.makeHostView()
+        defer { coordinator.dismantle() }
+        let committed = session.document
+        host.deliverPencilSamples(coalesced: [], primary: .init(identity: NSObject(), location: .init(x: 10, y: 10)), phase: .began)
+        host.deliverPencilSamples(coalesced: [], primary: .init(identity: NSObject(), location: .init(x: 50, y: 50)), phase: .moved)
+        XCTAssertNotNil(session.preview, "Test must have an unfinished drawing to cancel")
+        let options = try CanvasJSONOptions.decode(#"{"configuration":{"inputMode":"touch"}}"#)
+        try options.apply(to: session)
+        coordinator.update()
+        XCTAssertNil(session.preview, "Changing accepted inputs must discard the unfinished draft")
+        host.deliverPencilSamples(coalesced: [], primary: .init(identity: NSObject(), location: .init(x: 80, y: 80)), phase: .ended)
+        XCTAssertEqual(session.document.elements, committed.elements, "A late Pencil lift must not commit the cancelled stroke")
+        XCTAssertEqual(session.document.revision, committed.revision)
+    }
+
     func testEraserHighlightUsesConfiguredColourWithoutResizeHandles() throws {
         let element = CanvasElement.rectangle(id: UUID(), rect: .init(x: 20, y: 20, width: 100, height: 80))
         var theme = CanvasTheme.default.renderSnapshot

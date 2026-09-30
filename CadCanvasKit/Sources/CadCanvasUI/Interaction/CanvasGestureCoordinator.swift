@@ -1,6 +1,17 @@
 import UIKit
 import CadCanvasCore
 
+extension CanvasInputMode {
+    func allows(_ source: UITouch.TouchType) -> Bool {
+        switch source {
+        case .pencil: self != .touch
+        case .direct: self != .pencil
+        case .indirectPointer: true
+        default: false
+        }
+    }
+}
+
 enum CanvasGestureRole: Sendable {
     case tap
     case pan
@@ -15,6 +26,13 @@ public final class CanvasGestureCoordinator: NSObject, UIGestureRecognizerDelega
     private let canManipulate: @MainActor (CanvasPoint) -> Bool
     private let send: @MainActor (CanvasInput) -> Void
     private let hitToleranceScreen: Double
+    var canNavigate: @MainActor () -> Bool = { true }
+    var canPan: @MainActor () -> Bool = { true }
+    var canZoom: @MainActor () -> Bool = { true }
+    private var inputMode: CanvasInputMode = .pencil
+    private var panActive = false
+    private var pinchActive = false
+    private var pinchOwnsNavigation = false
 
     let tapRecognizer: UITapGestureRecognizer
     let panRecognizer: UIPanGestureRecognizer
@@ -51,10 +69,9 @@ public final class CanvasGestureCoordinator: NSObject, UIGestureRecognizerDelega
             recognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
             recognizer.delegate = self
         }
-        tapRecognizer.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.direct.rawValue),
-            NSNumber(value: UITouch.TouchType.indirectPointer.rawValue),
-        ]
+        // Pencil and finger editing share the host's coalesced-touch path.
+        tapRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+        manipulationRecognizer.allowedTouchTypes = tapRecognizer.allowedTouchTypes
         tapRecognizer.addTarget(self, action: #selector(handleTap(_:)))
         panRecognizer.addTarget(self, action: #selector(handlePan(_:)))
         pinchRecognizer.addTarget(self, action: #selector(handlePinch(_:)))
@@ -84,6 +101,31 @@ public final class CanvasGestureCoordinator: NSObject, UIGestureRecognizerDelega
             pointerInteraction.view?.removeInteraction(pointerInteraction)
             self.pointerInteraction = nil
         }
+    }
+
+    func configure(inputMode: CanvasInputMode) {
+        for recognizer in recognizers {
+            recognizer.isEnabled = false
+            recognizer.isEnabled = true
+        }
+        self.inputMode = inputMode
+        panActive = false
+        pinchActive = false
+        pinchOwnsNavigation = false
+        panRecognizer.minimumNumberOfTouches = inputMode == .pencil ? 1 : 2
+        panRecognizer.maximumNumberOfTouches = panRecognizer.minimumNumberOfTouches
+    }
+
+    func cancelNavigation() {
+        for recognizer in [panRecognizer, pinchRecognizer] as [UIGestureRecognizer]
+            where recognizer.state == .began || recognizer.state == .changed {
+            recognizer.isEnabled = false
+            recognizer.isEnabled = true
+        }
+    }
+
+    func isNavigation(_ recognizer: UIGestureRecognizer) -> Bool {
+        recognizer === panRecognizer || recognizer === pinchRecognizer
     }
 
     func hitElementID(atScreenPoint screenPoint: CanvasPoint) -> UUID? {
@@ -157,18 +199,46 @@ public final class CanvasGestureCoordinator: NSObject, UIGestureRecognizerDelega
         _ first: CanvasGestureRole,
         _ second: CanvasGestureRole
     ) -> Bool {
-        false
+        inputMode != .pencil && ((first == .pan && second == .pinch) || (first == .pinch && second == .pan))
     }
 
     func shouldBegin(role: CanvasGestureRole, screenLocation: CanvasPoint) -> Bool {
         switch role {
-        case .tap, .pinch:
+        case .tap:
             return true
-        case .pan, .manipulation:
+        case .pan:
+            return canNavigate() && canPan()
+        case .pinch:
+            return canNavigate() && canZoom()
+        case .manipulation:
             guard let canvasPoint = canvasPoint(from: screenLocation) else { return false }
-            let manipulationOwnsPoint = canManipulate(canvasPoint)
-            return role == .manipulation ? manipulationOwnsPoint : !manipulationOwnsPoint
+            return canManipulate(canvasPoint)
         }
+    }
+
+    func deliver(_ input: CanvasInput) {
+        switch input {
+        case .panBegan:
+            panActive = true
+            if pinchOwnsNavigation { return }
+        case .panChanged:
+            if pinchOwnsNavigation { return }
+        case .panEnded:
+            panActive = false
+            if pinchOwnsNavigation {
+                if !pinchActive { pinchOwnsNavigation = false }
+                return
+            }
+        case .pinchBegan:
+            pinchActive = true
+            pinchOwnsNavigation = true
+            if panActive { send(.panEnded(screenVelocity: .init(x: 0, y: 0))) }
+        case .pinchEnded, .pinchCancelled:
+            pinchActive = false
+            if !panActive { pinchOwnsNavigation = false }
+        default: break
+        }
+        send(input)
     }
 
     func map(
@@ -287,7 +357,7 @@ private extension CanvasGestureCoordinator {
         ) else {
             return
         }
-        send(input)
+        deliver(input)
     }
 
     func canvasPoint(from screenPoint: CanvasPoint?) -> CanvasPoint? {

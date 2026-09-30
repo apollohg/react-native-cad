@@ -2304,7 +2304,7 @@ final class InteractionReducerTests: XCTestCase {
         }
     }
 
-    func testCoordinatorChoosesPanOrManipulationBeforeRecognition() throws {
+    func testCoordinatorAllowsFingerNavigationOverPointerManipulationTargets() throws {
         let coordinator = CanvasGestureCoordinator(
             viewport: { try! .identity(size: .init(width: 100, height: 100)) },
             canManipulate: { $0.x >= 50 },
@@ -2317,7 +2317,7 @@ final class InteractionReducerTests: XCTestCase {
         XCTAssertFalse(
             coordinator.shouldBegin(role: .manipulation, screenLocation: .init(x: 25, y: 20))
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             coordinator.shouldBegin(role: .pan, screenLocation: .init(x: 75, y: 20))
         )
         XCTAssertTrue(
@@ -2443,11 +2443,11 @@ final class InteractionReducerTests: XCTestCase {
         XCTAssertEqual(
             coordinator.tapRecognizer.allowedTouchTypes,
             [
-                NSNumber(value: UITouch.TouchType.direct.rawValue),
                 NSNumber(value: UITouch.TouchType.indirectPointer.rawValue),
             ]
         )
-        for recognizer in coordinator.recognizers where recognizer !== coordinator.tapRecognizer {
+        XCTAssertEqual(coordinator.manipulationRecognizer.allowedTouchTypes, coordinator.tapRecognizer.allowedTouchTypes)
+        for recognizer in [coordinator.panRecognizer, coordinator.pinchRecognizer] as [UIGestureRecognizer] {
             XCTAssertEqual(
                 recognizer.allowedTouchTypes,
                 [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -3053,11 +3053,14 @@ private final class RecordingRenderer: CanvasRenderer {
 
 @MainActor
 private final class RecordingPencilPalettePresenter: CanvasPencilPalettePresenting {
+    private(set) var theme: CanvasTheme?
     private(set) var presentedAction: CanvasPencilShortcutAction?
     private(set) var lastAnchor: CanvasPoint?
     private(set) weak var lastHostView: UIView?
     private(set) var lastStyleTool: CanvasTool?
     private(set) var dismissCount = 0
+
+    func update(theme: CanvasTheme) { self.theme = theme }
 
     func toggle(
         _ action: CanvasPencilShortcutAction,

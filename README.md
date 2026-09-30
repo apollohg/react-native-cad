@@ -68,6 +68,7 @@ Give the view a nonzero size. The Expo view has no native toolbar or inspector. 
 See [the TypeScript API](src/types.ts) for every option. `options` is a partial configuration over native defaults, not a patch over previous props. Removing an override restores its default. Arrays replace defaults; an empty array disables all entries. Colours use normalized RGBA components, and nullable colours/fill accept `null` to clear them.
 
 - `configuration.enabledTools` and `enabledFeatures`: independently enable drawing tools and editing capabilities, including measurements, grid, snapping, panning, zooming, recognition, history, styling, and Pencil shortcuts.
+- `configuration.inputMode`: `'pencil'` (default), `'touch'`, or `'both'` for canvas drawing/editing. Fingers still navigate in Pencil-only mode. Touch/both use one finger to edit and two fingers to pan or pinch. Pencil takes priority in both mode; finger strokes use nominal width without pressure. Changing modes discards the unfinished interaction and keeps the committed document. React Native controls and keyboard commands are unaffected.
 - `configuration.controls`: visible controls/tool order, value ranges and steps, fonts, button appearance, and clear confirmation.
 - `configuration.measurements`: axes, dimension roles, units, precision, extension lines, and hiding.
 - `theme`: all canvas/selection/grid/guide colours, line widths, dash patterns, handles, spacing, and dimension-label styling.
