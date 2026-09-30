@@ -1,2 +1,2 @@
-export { CADCanvas, isCADSupported } from './CADCanvas';
+export { CadCanvas, isCADSupported } from './CadCanvas';
 export type * from './types';

@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.static_framework = true
   s.source_files = 'ios/ReactNativeCAD/**/*.swift'
   s.dependency 'ExpoModulesCore'
-  s.dependency 'DrawCanvasCore', s.version.to_s
-  s.dependency 'DrawCanvasUI', s.version.to_s
+  s.dependency 'CadCanvasCore', s.version.to_s
+  s.dependency 'CadCanvasUI', s.version.to_s
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end

@@ -1,6 +1,6 @@
 # react-native-cad
 
-An Expo native view wrapping the Swift/Metal DrawCanvas engine. iPad and Apple Pencil support; Android and web deliberately render `null` and load no native canvas module.
+An Expo native view wrapping the Swift/Metal CadCanvas engine. iPad and Apple Pencil support; Android and web deliberately render `null` and load no native canvas module.
 
 Requires **Expo SDK 57**, **React Native 0.86**, **iOS 26+**, and a custom development or production build. It does not run in Expo Go. The native engine remains Swift 6; the small Expo adapter uses Expo's Swift 5.9 language mode.
 
@@ -34,12 +34,12 @@ Expo SDK 57 needs `enableSceneSupport` when building with Xcode 27. See [Expo's 
 
 ```tsx
 import { useRef } from 'react';
-import { CADCanvas, type CADCanvasRef } from 'react-native-cad';
+import { CadCanvas, type CadCanvasRef } from 'react-native-cad';
 
 export function Drawing() {
-  const canvas = useRef<CADCanvasRef>(null);
+  const canvas = useRef<CadCanvasRef>(null);
   return (
-    <CADCanvas
+    <CadCanvas
       ref={canvas}
       style={{ flex: 1 }}
       tool="freehand"
@@ -81,7 +81,7 @@ The ref exposes `perform('undo' | 'redo' | 'clear' | 'deleteSelection' | 'duplic
 
 `getRenderer()` and `onRendererChange` report `initializing`, `metal`, or `coreGraphics`. Fallback diagnostics arrive through `onError`.
 
-On Android/web, `isCADSupported` is false, `CADCanvas` returns `null`, and its ref remains null. Check support before calling methods. Unsupported platforms show no placeholder or error UI unless your application adds one.
+On Android/web, `isCADSupported` is false, `CadCanvas` returns `null`, and its ref remains null. Check support before calling methods. Unsupported platforms show no placeholder or error UI unless your application adds one.
 
 ## Example and native tests
 
@@ -93,7 +93,7 @@ cd example/ios && pod install
 
 Open `example/ios/CADExample.xcworkspace` in Xcode, choose your signing team locally and your connected iPad, and run. Debug needs `npm run start --workspace example`; Release embeds the JavaScript bundle. Generated native projects and signing settings are gitignored. The example is a bare, full-size canvas with freehand selected—no toolbar, inspector, or debug labels. Add your own React Native controls when integrating it.
 
-`DrawCanvasDemo` retains the native physical-device regression host. Its signing team comes from gitignored `DrawCanvasDemo/Config/Local.xcconfig`. See its README for the physical test schemes. The Swift sources have one copy under `DrawCanvasKit/Sources`, shared by CocoaPods and the local Swift package.
+`CadCanvasDemo` retains the native physical-device regression host. Its signing team comes from gitignored `CadCanvasDemo/Config/Local.xcconfig`. See its README for the physical test schemes. The Swift sources have one copy under `CadCanvasKit/Sources`, shared by CocoaPods and the local Swift package.
 
 ```sh
 npm test

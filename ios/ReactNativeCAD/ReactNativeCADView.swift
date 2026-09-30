@@ -1,5 +1,5 @@
-import DrawCanvasCore
-import DrawCanvasUI
+import CadCanvasCore
+import CadCanvasUI
 import ExpoModulesCore
 import Observation
 import SwiftUI
@@ -34,7 +34,7 @@ private struct CADRootView: View {
 
     var body: some View {
         ZStack {
-            DrawCanvasView(commandActions: model.commands, rendererStatus: model.rendererStatus)
+            CadCanvasView(commandActions: model.commands, rendererStatus: model.rendererStatus)
             DimensionOverlay(actions: model.actions)
         }
         .canvasTheme(model.theme)

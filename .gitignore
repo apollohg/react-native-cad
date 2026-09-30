@@ -10,5 +10,5 @@ example/android/
 example/.expo/
 example/dist/
 Config/Local.xcconfig
-DrawCanvasDemo/Config/Local.xcconfig
+CadCanvasDemo/Config/Local.xcconfig
 .verification/

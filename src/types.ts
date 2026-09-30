@@ -96,7 +96,7 @@ export interface CADDocumentChange {
 export interface CADError { operation: string; message: string }
 export type CADRenderer = 'initializing' | 'metal' | 'coreGraphics';
 export type CADCommand = 'undo' | 'redo' | 'clear' | 'deleteSelection' | 'duplicateSelection' | 'zoomToFit';
-export interface CADCanvasRef {
+export interface CadCanvasRef {
   /** Serializes only the last committed document, never an in-progress stroke. */
   getDocument(): Promise<string>;
   /** Validates before replacing the document; resets selection and undo history. */
@@ -104,8 +104,8 @@ export interface CADCanvasRef {
   perform(command: CADCommand): Promise<boolean>;
   getRenderer(): Promise<CADRenderer>;
 }
-export interface CADCanvasProps extends ViewProps {
-  ref?: Ref<CADCanvasRef>;
+export interface CadCanvasProps extends ViewProps {
+  ref?: Ref<CadCanvasRef>;
   options?: CADOptions;
   tool?: CADTool;
   onDocumentChange?: (event: { nativeEvent: CADDocumentChange }) => void;

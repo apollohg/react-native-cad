@@ -9,21 +9,21 @@ vi.mock('expo', () => ({
     return (props: any) => { state.props = props; return null; };
   },
 }));
-import { CADCanvas, isCADSupported } from '../src/CADCanvas.ios';
+import { CadCanvas, isCADSupported } from '../src/CadCanvas.ios';
 
 it('forwards ref and events without moving documents or Pencil samples through props', async () => {
   const ref = React.createRef<any>();
   const changed = vi.fn();
   const options = { configuration: { enabledTools: ['freehand' as const] } };
   let tree: ReturnType<typeof create>;
-  await act(async () => { tree = create(<CADCanvas ref={ref} options={options} onDocumentChange={changed} tool="freehand" />); });
+  await act(async () => { tree = create(<CadCanvas ref={ref} options={options} onDocumentChange={changed} tool="freehand" />); });
   expect(isCADSupported).toBe(true);
   expect(state.props.ref).toBe(ref);
   expect(JSON.parse(state.props.optionsJSON)).toEqual(options);
   expect(state.props.onDocumentChange).toBe(changed);
   expect(state.props.tool).toBe('freehand');
   expect(state.props).not.toHaveProperty('document');
-  await act(async () => { tree!.update(<CADCanvas ref={ref} />); });
+  await act(async () => { tree!.update(<CadCanvas ref={ref} />); });
   expect(state.props.optionsJSON).toBe('{}');
   await act(async () => tree!.unmount());
 });
