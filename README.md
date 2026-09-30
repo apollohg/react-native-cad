@@ -104,5 +104,3 @@ npx tsc --noEmit -p example/tsconfig.json
 For a packed-package integration check, install the tarball into a separate Expo app, export both platforms with `--source-maps`, then run `node scripts/assert-platform-bundles.cjs /path/to/export`. This checks Metro selected the native iOS view and the Android no-op.
 
 The on-device Expo smoke test is in `tests/device`. Generate its disposable Xcode project with `ruby scripts/create-device-test-project.rb` (requires the `xcodeproj` gem), install the Release example, and run the `CADExpoDeviceTests` scheme on the iPad. It checks the canvas mounts without built-in controls. Signing remains local.
-
-This repository starts with fresh history. It is proprietary (`UNLICENSED`); no npm publish or Git push is performed by local packaging.
